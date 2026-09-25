@@ -10,7 +10,7 @@
 <section class="side-card online"><div class="side-title"><span>🧑‍🤝‍🧑 好友联机</span><span id="onlineStatus" class="online-status">单机</span></div><p id="onlineHint">创建房间码，邀请好友一起布置小院。</p><button id="onlineOpen" class="online-button">创建 / 加入房间</button><button id="leaveRoom" class="online-button secondary" hidden>退出联机</button></section>
 <section class="side-card tip"><b>🐾 小提示</b><p id="tipText">猫粮和玩具各放一处，来访猫咪会慢慢熟悉新家。</p></section></aside></main>
 <footer>金币主要来自任务 · 一猫一行，双击昵称可改名</footer></div>
-<div class="modal-backdrop" id="onlineModal"><section class="modal"><header><b>好友联机</b><button id="onlineClose" aria-label="关闭">×</button></header><p>两位玩家共享地图与摆放物，金币和任务各自计算。</p><label>你的昵称<input id="playerName" maxlength="12" placeholder="小院访客"></label><button class="online-button" id="createRoom">创建好友房间</button><label>好友房间码<input id="roomCode" maxlength="8" autocomplete="off" placeholder="输入 8 位房间码"></label><button class="online-button secondary" id="joinRoom">加入好友房间</button><small id="onlineMessage">首次使用需配置 Firebase 实时数据库；单机游戏不受影响。</small></section></div>
+<div class="modal-backdrop" id="onlineModal"><section class="modal"><header><b>好友联机</b><button id="onlineClose" aria-label="关闭">×</button></header><p>两位玩家共享地图、道具、猫咪和视角，金币与任务各自计算。</p><label>你的昵称<input id="playerName" maxlength="12" placeholder="小院访客"></label><button class="online-button" id="createRoom">创建好友房间</button><button class="online-button secondary" id="copyRoom" hidden>复制房间码</button><label>好友房间码<input id="roomCode" maxlength="8" autocomplete="off" placeholder="输入 8 位房间码"></label><button class="online-button secondary" id="joinRoom">加入好友房间</button><small id="onlineMessage">正在加载好友联机组件…</small></section></div>
 <script src="game.js"></script><script type="module" src="online.js"></script></body></html>
 
 

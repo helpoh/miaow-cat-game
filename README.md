@@ -6,12 +6,10 @@
 
 主页 `index.html` 依赖同目录的 `style.css`、`game.js` 和 `online.js`。在文件模式下部分浏览器会限制 ES Module；建议通过静态 HTTP 服务器或 GitHub Pages 打开。
 
-## 好友联机配置
+## 好友联机
 
-联机部分基于 Firebase Authentication 匿名登录与 Realtime Database。首次使用需要在 Firebase 控制台创建 Web App、启用匿名登录和 Realtime Database，将 Web 配置填入 `firebase-config.js`，并把 `database.rules.json` 的规则部署到数据库。网页配置中的 API key 是客户端标识，不要把 Service Account 私钥放进网页仓库；数据库权限由安全规则保护。
-
-配置留空时，单机功能仍可玩，联机按钮会说明尚未配置。当前公开站点尚未绑定 Firebase 项目，因此好友房间不会实际连接，需完成上述配置后才可启用。
+线上版本使用 PeerJS 建立点对点数据连接，不需要填写 Firebase 配置。点击“创建 / 加入房间”，房主把 8 位房间码发给好友，好友输入后即可共享三张地图、摆放物、猫咪状态和视角；金币与任务仍按各自玩家计算。房主离开后房间会结束，好友重新打开页面即可继续单机游玩。
 
 ## 发布到 GitHub Pages
 
-将 `index.html`、`style.css`、`game.js`、`online.js`、`firebase-config.js`、`database.rules.json` 和 `.nojekyll` 放到仓库根目录；之后在 **Settings → Pages** 选择 `main` 分支和 `/(root)`。
+将 `index.html`、`style.css`、`game.js`、`online.js` 和 `.nojekyll` 放到仓库根目录；之后在 **Settings → Pages** 选择 `main` 分支和 `/(root)`。联机依赖 `cdn.jsdelivr.net` 与 PeerJS 信令服务，若网络屏蔽外部 CDN，单机功能仍可使用。
