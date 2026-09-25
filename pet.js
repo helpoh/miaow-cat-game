@@ -103,54 +103,105 @@
     return {ok:true,text};
   }
 
-  // Local phrases, not an AI service. Only the existing action() mutates pet stats.
+  // Model generation stays in a dedicated local worker. Only action() changes pet stats.
   const CHAT_KEY='catyard-pet-chat-v1', chatLog=$('petChatLog'), chatInput=$('petChatInput');
-  let chat=[], composing=false, compositionEnded=-Infinity;
+  let chat=[], composing=false, compositionEnded=-Infinity, chatRequest=0, pendingReply=null;
+  const localModel=new window.PetLocalModel(renderModelStatus);
   try {
     const raw=JSON.parse(localStorage.getItem(CHAT_KEY)||'[]');
     if(Array.isArray(raw))chat=raw.filter(m=>m&&['user','cat'].includes(m.role)&&typeof m.text==='string')
-      .slice(-30).map(m=>({role:m.role,text:Array.from(m.text).slice(0,200).join('')}));
+      .slice(-30).map(m=>({role:m.role,text:Array.from(m.text).slice(0,m.role==='cat'?1000:200).join(''),source:m.source==='local-model'?'local-model':'legacy',interrupted:!!m.interrupted}));
   } catch {}
   function renderChat() {
     chatLog.replaceChildren();
     if(!chat.length){
       const welcome=document.createElement('p');welcome.className='pet-chat-empty';
-      welcome.textContent='喵，我是奶糖！试着说“摸摸你”或问我“现在状态怎么样”。';chatLog.append(welcome);
+      welcome.textContent='加载本地模型后，和奶糖聊聊今天的心情吧。回复会在你的设备上生成。';chatLog.append(welcome);
     }
     for(const m of chat){
       const row=document.createElement('p'),name=document.createElement('b'),body=document.createElement('span');
-      row.className='pet-chat-bubble '+m.role;name.textContent=m.role==='cat'?'奶糖':'你';body.textContent=m.text;
+      row.className='pet-chat-bubble '+m.role;name.textContent=m.role==='cat'?'奶糖':'你';body.textContent=m.text||'奶糖正在思考…';
+      if(m.role==='cat'&&m.source==='legacy')name.textContent='奶糖 · 旧版记录';
+      if(m.interrupted)name.textContent+=' · 已中断';
       row.append(name,body);chatLog.append(row);
     }
     chatLog.scrollTop=chatLog.scrollHeight;
   }
   function saveChat() {
-    try{localStorage.setItem(CHAT_KEY,JSON.stringify(chat));$('petChatNotice').textContent='仅保留最近 30 条消息，可随时清空。';}
+    try{localStorage.setItem(CHAT_KEY,JSON.stringify(chat.filter(m=>m.text.trim())));$('petChatNotice').textContent='仅保留最近 30 条消息，可随时清空。';}
     catch{$('petChatNotice').textContent='浏览器无法保存聊天，本次仍可对话；旧记录可能无法清除。';}
   }
-  function reply(text) {
-    if(/状态|怎么样|在干嘛|在做什么|在干什么|饿不饿|饿了吗|饱了吗|饱了没|吃饱|困不困|困了吗|心情|精力|亲密|饱腹|体重|年龄|几岁|多大|睡着了吗/.test(text))
-      return `喵，我现在${moods[mode]||'安心'}，饱腹 ${Math.round(pet.food)}%，精力 ${Math.round(pet.energy)}%，亲密度 ${Math.round(pet.bond)}%。${pet.food<30?'小肚子有点饿了。':pet.energy<12?'想休息一下。':'谢谢你陪着我！'}`;
-    if(/不|没|别|勿|禁止|停止|取消|莫要/.test(text))
-      return '好哒，这句话我不执行动作，继续保持现在的状态，喵。';
-    const intents=[['pet',/摸摸|摸头|摸你|摸小猫|抚摸|挠挠|蹭蹭/],['feed',/喂食|喂你|喂猫|猫粮|吃饭|开饭|吃点|吃东西|投喂/],
-      ['toy',/一起玩|陪玩|陪你玩|陪我玩|玩一会|玩一下|毛线球|逗猫|玩耍/],['sleep',/睡觉|睡吧|休息|晚安|睡一会/],['wake',/叫醒|起床|醒醒|醒来/]];
-    const matches=intents.map(([type,pattern])=>({type,index:text.search(pattern)})).filter(m=>m.index>=0).sort((a,b)=>a.index-b.index);
-    if(matches.length){
-      const result=action(matches[0].type);
-      return result.text+(matches.length>1?' 一次只做一件事哦，其他动作可以下一句再告诉我。':'');
+  function renderModelStatus({state,text,progress}) {
+    $('petModelStatus').textContent=text;
+    const loading=state==='loading',generating=state==='generating',clearing=state==='clearing';
+    $('petModelLoad').disabled=loading||generating||clearing||state==='ready';
+    $('petModelLoad').textContent=state==='ready'?'模型已就绪':state==='error'?'重新加载':'加载本地模型';
+    $('petModelStop').hidden=!(loading||generating||clearing);
+    $('petModelCache').disabled=clearing;
+    $('petModelProgress').hidden=!loading;
+    if(progress===null)$('petModelProgress').removeAttribute('value');
+    else $('petModelProgress').value=progress;
+    $('petChatSend').disabled=state!=='ready';
+    $('petChatForm').setAttribute('aria-busy',String(generating));
+    document.querySelectorAll('[data-chat]').forEach(b=>{b.disabled=state!=='ready';});
+  }
+  // Existing explicit care phrases remain guarded; generated text cannot execute code/actions.
+  function chatAction(text) {
+    if(/不|没|别|勿|禁止|停止|取消|莫要|状态|怎么样|[?？]|吗|体重|精力|心情/.test(text))return null;
+    const intents=[['pet',/摸摸|摸头|摸你|抚摸|挠挠/],['feed',/喂食|喂你|喂猫|吃饭|开饭|投喂/],
+      ['toy',/一起玩|陪玩|陪你玩|陪我玩|玩一会|玩一下|逗猫/],['sleep',/睡觉|睡吧|休息|晚安/],['wake',/叫醒|起床|醒醒|醒来/]];
+    const match=intents.map(([type,re])=>({type,index:text.search(re)})).filter(m=>m.index>=0).sort((a,b)=>a.index-b.index)[0];
+    return match?action(match.type):null;
+  }
+  function modelMessages(text,outcome) {
+    const system=`你是游戏里的小猫奶糖。用中文自然聊天，温柔可爱，回复一两句话。不要编造已经执行的游戏动作，不要说自己是豆包。当前饱腹${Math.round(pet.food)}%，精力${Math.round(pet.energy)}%，心情${moods[mode]}。本次互动：${outcome?.text||'未执行动作，只聊天'}。`;
+    const messages=[{role:'system',content:system}],previous=[];
+    const cost=s=>new TextEncoder().encode(s).length;
+    let budget=1550-cost(system)-cost(text);
+    // Whole recent turns only, with a conservative UTF-8 budget under the 2K context.
+    for(let i=chat.length-1;i>0;i--){
+      const a=chat[i],u=chat[i-1];
+      if(a.role!=='cat'||u.role!=='user'||a.source!=='local-model'||a.interrupted||!a.text)continue;
+      const size=cost(a.text)+cost(u.text)+24;if(size>budget)break;
+      previous.unshift({role:'user',content:u.text},{role:'assistant',content:a.text});budget-=size;i--;
+      if(previous.length>=4)break;
     }
-    if(/你好|您好|嗨|哈[喽啰]|早安|早上好|晚上好|hello|\bhi\b/i.test(text))return `喵～你好！我是奶糖，现在${moods[mode]||'安心'}。${pet.energy<12?'有点困啦，可以让我休息。':pet.food<30?'肚子有点饿，可以喂我吗？':'很高兴你来陪我。'}`;
-    if(/谢谢|喜欢你|爱你|可爱|乖/.test(text))return '喵～收到你的喜欢啦！想互动可以说“摸摸你”。';
-    if(/再见|拜拜/.test(text))return '拜拜，我在小屋等你回来，记得来陪奶糖哦～';
-    return '喵，这句我还听不懂。我会回应简单说法：摸摸你、吃饭啦、一起玩、睡觉吧、叫醒、查看状态。';
+    return [...messages,...previous,{role:'user',content:text}];
   }
-  function sendChat(value) {
-    const text=String(value).trim();if(!text)return false;
-    if(Array.from(text).length>200){$('petChatNotice').textContent='每条最多 200 字，请缩短后发送。';return false;}
-    chat.push({role:'user',text},{role:'cat',text:reply(text)});chat=chat.slice(-30);
-    renderChat();saveChat();return true;
+  function cancelChat(text) {
+    chatRequest++;
+    if(pendingReply){
+      if(pendingReply.text)pendingReply.interrupted=true;
+      else chat=chat.filter(m=>m!==pendingReply);
+      pendingReply=null;renderChat();saveChat();
+    }
+    localModel.cancel(text);
   }
+  async function sendChat(value) {
+    const text=String(value).trim();if(!text||localModel.state!=='ready')return;
+    if(Array.from(text).length>200){$('petChatNotice').textContent='每条最多 200 字，请缩短后发送。';return;}
+    const outcome=chatAction(text),messages=modelMessages(text,outcome),request=++chatRequest;
+    const response={role:'cat',text:'',source:'local-model'};pendingReply=response;
+    chat.push({role:'user',text,source:'local-model'},response);chat=chat.slice(-30);
+    chatInput.value='';renderChat();saveChat();
+    try{
+      const result=await localModel.generate(messages,partial=>{
+        if(request!==chatRequest)return;
+        response.text=partial;renderChat();
+      });
+      if(request!==chatRequest)return;
+      response.text=result;pendingReply=null;renderChat();saveChat();
+    }catch(e){
+      if(request!==chatRequest)return;
+      if(response.text)response.interrupted=true;
+      else chat=chat.filter(m=>m!==response);
+      pendingReply=null;renderChat();saveChat();
+      $('petChatNotice').textContent='这次回复未完成，可重新加载后再试。已执行的互动不会自动撤销。';
+    }
+  }
+  $('petModelLoad').addEventListener('click',()=>localModel.load());
+  $('petModelStop').addEventListener('click',()=>cancelChat());
+  $('petModelCache').addEventListener('click',()=>{cancelChat();localModel.clearCache();});
   chatInput.addEventListener('compositionstart',()=>{composing=true;});
   chatInput.addEventListener('compositionend',()=>{composing=false;compositionEnded=performance.now();});
   chatInput.addEventListener('keydown',e=>{
@@ -161,12 +212,16 @@
   });
   $('petChatForm').addEventListener('submit',e=>{
     e.preventDefault();if(composing||performance.now()-compositionEnded<80)return;
-    if(sendChat(chatInput.value))chatInput.value='';
+    sendChat(chatInput.value);
   });
   $('petChatQuick').addEventListener('click',e=>{
     const b=e.target.closest('[data-chat]');if(b)sendChat(b.dataset.chat);
   });
-  $('petChatClear').addEventListener('click',()=>{chat=[];renderChat();saveChat();});
+  $('petChatClear').addEventListener('click',()=>{
+    if(localModel.state==='generating')cancelChat('聊天已清空，请重新加载模型后继续。');
+    chat=[];renderChat();saveChat();
+  });
+  renderModelStatus({state:'idle',text:'点击加载后才下载模型；生成回复不调用付费 API。',progress:null});
   renderChat();
 
   function fitPetViewport() {
@@ -323,6 +378,7 @@
   }
   function close() {
     if(!opened)return;
+    cancelChat('已释放模型运行内存，下次可从缓存重新加载。');
     if(pointer)finishPointer({pointerId:pointer.id},true);
     opened=false;cancelAnimationFrame(raf);raf=0;y=FLOOR;mode='idle';toy=null;target=null;
     save();modal.classList.remove('show');modal.setAttribute('aria-hidden','true');
@@ -345,8 +401,8 @@
     pet.scene='room';message('养成数据已重置，小猫正在等你重新陪伴。');renderUI();draw();save();
   });
   document.addEventListener('visibilitychange',()=>{
-    if(document.hidden){if(pointer)finishPointer({pointerId:pointer.id},true);if(opened)save();cancelAnimationFrame(raf);raf=0;}
+    if(document.hidden){if(['loading','generating'].includes(localModel.state))cancelChat('已暂停并释放模型内存。回到页面后可重新加载。');if(pointer)finishPointer({pointerId:pointer.id},true);if(opened)save();cancelAnimationFrame(raf);raf=0;}
     else startLoop();
   });
-  window.addEventListener('pagehide',()=>{if(opened)save();});
+  window.addEventListener('pagehide',()=>{cancelChat();if(opened)save();});
 })();

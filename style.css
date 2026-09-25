@@ -46,3 +46,16 @@ body.pet-is-open{overflow:hidden}
 @media(max-width:560px){.pet-main{grid-template-columns:minmax(0,1fr)}.pet-chat-log{height:160px}.pet-device-foot{display:flex;align-items:center;text-align:left}.pet-device-foot button{margin:0;min-height:32px}.pet-device-head{gap:8px}.pet-device-tools{gap:5px}.pet-hint{max-width:95%;white-space:normal;text-align:center}}
 @media(max-height:500px) and (min-width:561px){.pet-main{grid-template-columns:minmax(0,1fr) minmax(280px,1fr)}.pet-stage-wrap{position:sticky;top:0}.pet-stage-wrap canvas{min-height:0}.pet-chat-log{height:120px}.pet-device{padding:7px}.pet-device-foot{padding-top:4px}.pet-device-head small{display:none}}
 @media(max-width:460px){.top{flex-wrap:wrap;gap:12px}.topstats{flex-wrap:wrap}}
+
+/* On-device model controls. Model files download only after an explicit click. */
+.pet-model-controls{display:grid;gap:7px;padding:10px;border:1px solid #d7e3e6;background:#f0f6f6;border-radius:8px;min-width:0}
+.pet-model-controls p{font-size:12px;line-height:1.6;margin:0;color:#4e666c}
+.pet-model-controls label{font-size:12px;font-weight:bold}
+.pet-model-controls select{width:100%;min-width:0;min-height:44px;font-size:16px;background:#fff;border:1px solid #b5c7cb;border-radius:6px;padding:5px;color:#37344a}
+.pet-model-buttons{display:flex;gap:6px;flex-wrap:wrap}
+.pet-model-controls small{font-size:10px;line-height:1.6;color:#687b7f}
+.pet-model-controls progress{width:100%;height:12px;accent-color:#88b2b6}
+.pet-chat button:disabled{opacity:.5;cursor:default}
+.pet-chat [hidden]{display:none!important}
+#petModelLoad{background:#dbeeee;font-weight:bold}
+#petModelStatus{font-size:12px;overflow-wrap:anywhere}
