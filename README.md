@@ -6,10 +6,18 @@
 
 主页 `index.html` 依赖同目录的 `style.css`、`game.js`、`pet.js` 和 `online.js`。在文件模式下部分浏览器会限制 ES Module；建议通过静态 HTTP 服务器或 GitHub Pages 打开。
 
+## 小猫对话
+
+在“小猫养成”中用输入框或快捷消息和奶糖互动。该功能是完全离线的本地规则对话，不是豆包或通用 AI，无 API 和费用。支持摸摸、吃饭、陪玩、休息、叫醒、状态查询和问候。动作沿用养成限制，不产生金币；每条只执行一个动作，含否定词时不执行动作，重复要求睡觉不会叫醒小猫。
+
+独立的 `catyard-pet-chat-v1` 本地存档只保留最近 30 条消息；“清空聊天”不改变养成状态。养成存档继续使用 `catyard-pet-v1`。无法访问存储时仍可在本次页面中对话。手机软键盘打开时根据可视区域调整弹层高度，输入框可滚动到可见位置。
+
+回归测试：安装或通过 `NODE_PATH` 指定 Playwright，然后运行 `node tests/pet-chat.cjs`（当前测试使用 Windows 上的 Chrome）。测试覆盖文字指令与实际动作、触摸拖拽、中文输入法、存档和桌面/手机横竖屏/缩小可视区域布局；截图输出到 `.qa/`。真实 iOS/Android 软键盘仍建议在设备上验收。
+
 ## 好友联机
 
 线上版本使用 PeerJS 建立点对点数据连接，不需要填写 Firebase 配置。点击“创建 / 加入房间”，房主把 8 位房间码发给好友，好友输入后即可共享三张地图、摆放物、猫咪状态和视角；金币与任务仍按各自玩家计算。房主离开后房间会结束，好友重新打开页面即可继续单机游玩。
 
 ## 发布到 GitHub Pages
 
-将 `index.html`、`style.css`、`game.js`、`online.js` 和 `.nojekyll` 放到仓库根目录；之后在 **Settings → Pages** 选择 `main` 分支和 `/(root)`。联机依赖 `cdn.jsdelivr.net` 与 PeerJS 信令服务，若网络屏蔽外部 CDN，单机功能仍可使用。
+将 `index.html`、`style.css`、`game.js`、`pet.js`、`online.js` 和 `.nojekyll` 放到仓库根目录；之后在 **Settings → Pages** 选择 `main` 分支和 `/(root)`。联机依赖 `cdn.jsdelivr.net` 与 PeerJS 信令服务，若网络屏蔽外部 CDN，单机功能仍可使用。更新养成资源时同步修改 HTML 内的版本参数，避免客户端混用旧脚本或样式。

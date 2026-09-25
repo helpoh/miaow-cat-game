@@ -73,28 +73,113 @@
     for(let i=0;i<5;i++)particles.push({x:x+(Math.random()-.5)*120,y:y-110-Math.random()*70,life:1.5+i*.1});
   }
   function action(type) {
-    if(pointer||y<FLOOR-1)return;
-    if(mode==='eat'||mode==='play')return;
-    target=null;toy=null;
+    const refuse = text => { message(text); return {ok:false,text}; };
+    if(pointer||y<FLOOR-1||mode==='fall')return refuse('喵，先轻轻把我放稳，再陪我互动吧。');
+    if(mode==='eat')return refuse('啊呜，我正在吃饭，等我吃完这一口再来吧。');
+    if(mode==='play')return refuse('我正在追毛线球，等我玩完这一轮再来吧！');
+    if(type==='wake'&&mode!=='sleep')return refuse('喵，我已经醒着啦，正在等你陪我。');
+    if(type==='sleep'&&mode==='sleep')return refuse('呼噜……我已经睡着啦，让我再休息一会儿。');
     if(type==='feed') {
-      if(pet.food>92){message('小肚子已经饱饱的啦，过一会儿再喂吧。');return;}
+      if(pet.food>92)return refuse('小肚子已经饱饱的啦，过一会儿再喂吧。');
       pet.food=clamp(pet.food+20,0,100);pet.weight+=2;pet.bond=clamp(pet.bond+1,0,100);
       react('eat',3,'啊呜啊呜……香香的猫粮！');
     } else if(type==='toy') {
-      if(pet.energy<12){message('有一点困了，先让小猫休息一下吧。');return;}
+      if(pet.energy<12)return refuse('有一点困了，先让我休息一下吧。');
       pet.energy-=8;pet.food=Math.max(0,pet.food-2);pet.bond=clamp(pet.bond+2,0,100);
       toy={x:x>W/2?120:W-120,y:FLOOR-6};target=toy.x;
       react('play',5,'毛线球滚到哪里，我就追到哪里！');
     } else if(type==='sleep') {
-      if(mode==='sleep')react('idle',0,'伸个懒腰，睡得好舒服～');
-      else react('sleep',Infinity,'呼噜呼噜……休息时会慢慢恢复精力。');
+      react('sleep',Infinity,'呼噜呼噜……休息时会慢慢恢复精力。');
+    } else if(type==='wake') {
+      react('idle',0,'伸个懒腰，我醒来啦，睡得好舒服～');
     } else {
       // Holding a finger still does not repeatedly award affection.
       if(mode!=='pet')pet.bond=clamp(pet.bond+1,0,100);
       hearts();react('pet',1.6,'眯起眼睛蹭蹭你，最喜欢摸摸头了 ♥');chime();
     }
+    if(type!=='toy'){target=null;toy=null;}
+    const text=$('petMessage').textContent;
     renderUI();save();draw();
+    return {ok:true,text};
   }
+
+  // Local phrases, not an AI service. Only the existing action() mutates pet stats.
+  const CHAT_KEY='catyard-pet-chat-v1', chatLog=$('petChatLog'), chatInput=$('petChatInput');
+  let chat=[], composing=false, compositionEnded=-Infinity;
+  try {
+    const raw=JSON.parse(localStorage.getItem(CHAT_KEY)||'[]');
+    if(Array.isArray(raw))chat=raw.filter(m=>m&&['user','cat'].includes(m.role)&&typeof m.text==='string')
+      .slice(-30).map(m=>({role:m.role,text:Array.from(m.text).slice(0,200).join('')}));
+  } catch {}
+  function renderChat() {
+    chatLog.replaceChildren();
+    if(!chat.length){
+      const welcome=document.createElement('p');welcome.className='pet-chat-empty';
+      welcome.textContent='喵，我是奶糖！试着说“摸摸你”或问我“现在状态怎么样”。';chatLog.append(welcome);
+    }
+    for(const m of chat){
+      const row=document.createElement('p'),name=document.createElement('b'),body=document.createElement('span');
+      row.className='pet-chat-bubble '+m.role;name.textContent=m.role==='cat'?'奶糖':'你';body.textContent=m.text;
+      row.append(name,body);chatLog.append(row);
+    }
+    chatLog.scrollTop=chatLog.scrollHeight;
+  }
+  function saveChat() {
+    try{localStorage.setItem(CHAT_KEY,JSON.stringify(chat));$('petChatNotice').textContent='仅保留最近 30 条消息，可随时清空。';}
+    catch{$('petChatNotice').textContent='浏览器无法保存聊天，本次仍可对话；旧记录可能无法清除。';}
+  }
+  function reply(text) {
+    if(/状态|怎么样|在干嘛|在做什么|在干什么|饿不饿|饿了吗|饱了吗|饱了没|吃饱|困不困|困了吗|心情|精力|亲密|饱腹|体重|年龄|几岁|多大|睡着了吗/.test(text))
+      return `喵，我现在${moods[mode]||'安心'}，饱腹 ${Math.round(pet.food)}%，精力 ${Math.round(pet.energy)}%，亲密度 ${Math.round(pet.bond)}%。${pet.food<30?'小肚子有点饿了。':pet.energy<12?'想休息一下。':'谢谢你陪着我！'}`;
+    if(/不|没|别|勿|禁止|停止|取消|莫要/.test(text))
+      return '好哒，这句话我不执行动作，继续保持现在的状态，喵。';
+    const intents=[['pet',/摸摸|摸头|摸你|摸小猫|抚摸|挠挠|蹭蹭/],['feed',/喂食|喂你|喂猫|猫粮|吃饭|开饭|吃点|吃东西|投喂/],
+      ['toy',/一起玩|陪玩|陪你玩|陪我玩|玩一会|玩一下|毛线球|逗猫|玩耍/],['sleep',/睡觉|睡吧|休息|晚安|睡一会/],['wake',/叫醒|起床|醒醒|醒来/]];
+    const matches=intents.map(([type,pattern])=>({type,index:text.search(pattern)})).filter(m=>m.index>=0).sort((a,b)=>a.index-b.index);
+    if(matches.length){
+      const result=action(matches[0].type);
+      return result.text+(matches.length>1?' 一次只做一件事哦，其他动作可以下一句再告诉我。':'');
+    }
+    if(/你好|您好|嗨|哈[喽啰]|早安|早上好|晚上好|hello|\bhi\b/i.test(text))return `喵～你好！我是奶糖，现在${moods[mode]||'安心'}。${pet.energy<12?'有点困啦，可以让我休息。':pet.food<30?'肚子有点饿，可以喂我吗？':'很高兴你来陪我。'}`;
+    if(/谢谢|喜欢你|爱你|可爱|乖/.test(text))return '喵～收到你的喜欢啦！想互动可以说“摸摸你”。';
+    if(/再见|拜拜/.test(text))return '拜拜，我在小屋等你回来，记得来陪奶糖哦～';
+    return '喵，这句我还听不懂。我会回应简单说法：摸摸你、吃饭啦、一起玩、睡觉吧、叫醒、查看状态。';
+  }
+  function sendChat(value) {
+    const text=String(value).trim();if(!text)return false;
+    if(Array.from(text).length>200){$('petChatNotice').textContent='每条最多 200 字，请缩短后发送。';return false;}
+    chat.push({role:'user',text},{role:'cat',text:reply(text)});chat=chat.slice(-30);
+    renderChat();saveChat();return true;
+  }
+  chatInput.addEventListener('compositionstart',()=>{composing=true;});
+  chatInput.addEventListener('compositionend',()=>{composing=false;compositionEnded=performance.now();});
+  chatInput.addEventListener('keydown',e=>{
+    if(e.key!=='Enter')return;
+    if(e.isComposing||composing||e.keyCode===229)return;
+    e.preventDefault();if(performance.now()-compositionEnded<80)return;
+    $('petChatForm').requestSubmit();
+  });
+  $('petChatForm').addEventListener('submit',e=>{
+    e.preventDefault();if(composing||performance.now()-compositionEnded<80)return;
+    if(sendChat(chatInput.value))chatInput.value='';
+  });
+  $('petChatQuick').addEventListener('click',e=>{
+    const b=e.target.closest('[data-chat]');if(b)sendChat(b.dataset.chat);
+  });
+  $('petChatClear').addEventListener('click',()=>{chat=[];renderChat();saveChat();});
+  renderChat();
+
+  function fitPetViewport() {
+    if(!opened)return;
+    const viewport=window.visualViewport;
+    modal.style.setProperty('--pet-visible-height',(viewport?.height||window.innerHeight)+'px');
+    modal.style.setProperty('--pet-visible-top',(viewport?.offsetTop||0)+'px');
+    if(document.activeElement===chatInput)$('petChatForm').scrollIntoView({block:'nearest'});
+  }
+  window.visualViewport?.addEventListener('resize',fitPetViewport);
+  window.visualViewport?.addEventListener('scroll',fitPetViewport);
+  window.addEventListener('resize',fitPetViewport);
+  chatInput.addEventListener('focus',fitPetViewport);
 
   const rect=(a,b,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(Math.round(a),Math.round(b),w,h);};
   function shape(points,color) {
@@ -225,7 +310,7 @@
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
   canvas.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();action('pet');}});
   canvas.tabIndex=0;
-  document.querySelectorAll('[data-pet-action]').forEach(b=>b.addEventListener('click',()=>action(b.dataset.petAction)));
+  document.querySelectorAll('[data-pet-action]').forEach(b=>b.addEventListener('click',()=>action(b.dataset.petAction==='sleep'&&mode==='sleep'?'wake':b.dataset.petAction)));
   $('petScenes').addEventListener('click',e=>{
     const b=e.target.closest('[data-pet-scene]');if(!b)return;
     pet.scene=b.dataset.petScene;renderUI();draw();save();
@@ -234,7 +319,7 @@
     if(opened)return;opened=true;returnFocus=document.activeElement;
     modal.classList.add('show');modal.setAttribute('aria-hidden','false');
     document.querySelector('.shell').inert=true;document.body.classList.add('pet-is-open');
-    renderUI();draw();startLoop();$('petClose').focus();
+    fitPetViewport();renderUI();draw();startLoop();$('petClose').focus();
   }
   function close() {
     if(!opened)return;
@@ -246,9 +331,10 @@
   }
   $('petOpen').addEventListener('click',open);$('petClose').addEventListener('click',close);
   modal.addEventListener('keydown',e=>{
+    if(e.isComposing||composing||e.keyCode===229)return;
     if(e.key==='Escape'){e.preventDefault();close();}
     if(e.key==='Tab'){
-      const nodes=[...modal.querySelectorAll('button,[tabindex="0"]')].filter(n=>!n.disabled&&n.getClientRects().length);
+      const nodes=[...modal.querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(n=>!n.disabled&&n.getClientRects().length);
       const first=nodes[0],end=nodes[nodes.length-1];
       if(e.shiftKey&&document.activeElement===first){e.preventDefault();end.focus();}
       else if(!e.shiftKey&&document.activeElement===end){e.preventDefault();first.focus();}
